@@ -13,11 +13,15 @@ from plot import *
 from sklearn.covariance import EmpiricalCovariance, LedoitWolf, OAS
 from LWO_estimator import *
 from MTSE import *
+from MTSE_baselines import MTSE_Lancewicki, MTSE_Gray
 import GIS, QIS, LIS, analytical_shrinkage
+
 
 from markowitz import *
 from dataloader import *
 import matplotlib.pyplot as plt
+
+import time
 
 def exp_usefulness(n_mc, PATH):
     pn_list = [(50,25)]
@@ -99,49 +103,102 @@ def exp_markowitz(PATH):
     Y = np.log(X[1:]) - np.log(X[:-1])
     
     cluster_targets = np.zeros((p,p,11))
+    last_target = np.eye(p)
     for i in range(11):
         idx = domain_list == i
         idxs = idx[:,np.newaxis] * idx[np.newaxis,:]
         target = np.zeros((p,p))
         target += idxs*np.eye(p)
         cluster_targets[:,:,i] = target
-    targets = np.concatenate([np.eye(p)[:,:,np.newaxis], cluster_targets], axis=2)
+    targets = np.concatenate([last_target[:,:,np.newaxis], cluster_targets], axis=2)
+    tilde_targets, free_indices, P = gram_schmidt(targets)
     
+    targets_lancewicki = np.concatenate([last_target[:,:,None], cluster_targets], axis=2)
+
     p = Y.shape[1]
     
     rst_tab = []
+    time_tab = []
     # lag is the number of months used to fit the estimator covariance
     lag_list = [3, 4, 6, 9, 12, 15]
     for lag in lag_list:
         print("\tMonths used to fit the estimators:", lag)
         res_s = []
+        res_t = []
         for i in range(lag,Y.shape[0]//20):
+            rst_t += [[]]
             Y_train = Y[max(0, (i-lag)*20):i*20]
             Y_test = Y[i*20:(i+1)*20]
             
+            beg = time.perf_counter()
             S = EmpiricalCovariance(store_precision=False, assume_centered=False).fit(Y_train).covariance_
-            S_MTSE = MTSE_estimator(Y_train, targets, assume_centered=False)
+            end = time.perf_counter()
+            rst_t[-1] += [end-beg]
+
+            beg = time.perf_counter()
+            S_MTSE = MTSE_estimator(Y_train, tilde_targets, assume_centered=False, assume_orthogonal=True)
+            end = time.perf_counter()
+            rst_t[-1] += [end-beg]
+
+            beg = time.perf_counter()
+            S_MTSE_L = MTSE_Lancewicki(Y_train, targets_lancewicki, assume_centered=False)
+            end = time.perf_counter()
+            rst_t[-1] += [end-beg]
+
+            beg = time.perf_counter()
+            S_MTSE_G = MTSE_Gray(Y_train, targets_lancewicki, assume_centered=False)
+            end = time.perf_counter()
+            rst_t[-1] += [end-beg]
+
+            beg = time.perf_counter()
             S_LWO = LWO_estimator(Y_train, assume_centered=False, S_r=None)
+            end = time.perf_counter()
+            rst_t[-1] += [end-beg]
+
+            beg = time.perf_counter()
             S_an = analytical_shrinkage.AS_estimator(Y_train, assume_centered = False)
+            end = time.perf_counter()
+            rst_t[-1] += [end-beg]
+
+            beg = time.perf_counter()
             S_GIS = GIS.GIS(Y_train, assume_centered = False)
+            end = time.perf_counter()
+            rst_t[-1] += [end-beg]
+
+            beg = time.perf_counter()
             S_QIS = QIS.QIS(Y_train, assume_centered = False)
+            end = time.perf_counter()
+            rst_t[-1] += [end-beg]
+
+            beg = time.perf_counter()
             S_LIS = LIS.LIS(Y_train, assume_centered = False)
+            end = time.perf_counter()
+            rst_t[-1] += [end-beg]
+
+            beg = time.perf_counter()
             S_OAS = OAS(store_precision=False, assume_centered=False).fit(Y_train).covariance_
+            end = time.perf_counter()
+            rst_t[-1] += [end-beg]
             
             res_s += [[]]
-            for Sigma in [S, S_MTSE, S_LWO, S_an, S_GIS, S_QIS, S_LIS, S_OAS]:
+            res_e += [[]]
+            for Sigma in [S, S_MTSE, S_MTSE_L, S_MTSE_G, S_LWO, S_an, S_GIS, S_QIS, S_LIS, S_OAS]:
                 e, s, IC = GMV(Y_test, Sigma, wb=np.ones(p)/p)
-                res_s[-1] += [s]
+                res_e[-1] += [e]
         
         res_s = np.array(res_s)
+        res_t = np.array(res_t)
         
-        algos = ["S", "MTSE", "LWO", "ANS", "GIS", "QIS", "LIS", "OAS"]
+        algos = ["S", "MTSE", "MTSE_L", "MTSE_G", "LWO", "ANS", "GIS", "QIS", "LIS", "OAS"]
         rst_tab += [[]]
+        time_tab += [[]]
         for i in range(res_s.shape[1]):
-            print("\t\t",algos[i],"cumulative variance: \t",res_s[:,i].sum())
+            print("\t\t",algos[i],"cumulative variance/time: \t",res_s[:,i].sum(), "\t|\t", res_t[:,i].mean())
             rst_tab[-1] += [res_s[:,i].sum()]
+            time_tab[-1] += [res_t[i]]
         
     rst_tab = np.array(rst_tab)
+    time_tab = np.array(time_tab)
     
     
     filename = "markowitz.pkl"
@@ -154,11 +211,13 @@ def exp_markowitz(PATH):
     
     dic = {
         'lag_list':lag_list,
-        'cum_variance': rst_tab
+        'cum_variance': rst_tab,
+        'time': time_tab
         }
     with open(path, 'wb') as file:
         pickle.dump(dic, file)
 
+    return rst_tab, time_tab
 
 if __name__ == "__main__":
     PATH = ".\\rst\\" # folder where you will store the results
