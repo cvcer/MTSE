@@ -160,11 +160,13 @@ def MTSE_estimator_unknown_mean(X, targets, assume_orthonormal):
     vt = np.zeros(K)
     for k in range(K):
         Tk = tilde_targets[:,:,k]
-        sqrtTk = sp.linalg.sqrtm(Tk, disp=False)[0]
+        sqrtTk = np.sqrt(Tk)#sp.linalg.sqrtm(Tk, disp=False)[0]
         Z = sqrtTk @ X
-        beta2_barT = ((Z**2).sum(axis=0)**2).sum().real/p/(n-1)**2 - np.trace(S @ Tk @ S @ Tk)/p/n
-        STk2s = ((S*Tk).sum(axis=1).sum(axis=0)/p)**2
-        STk2n = np.trace(S @ Tk @ S @ Tk)/p
+        C = S @ Tk
+        tC = (C*C.T).sum()
+        beta2_barT = ((Z**2).sum(axis=0)**2).sum().real/p/(n-1)**2 - tC/p/n
+        STk2s = ((S*Tk).sum()/p)**2
+        STk2n = tC/p
         
         vtk = beta2_barT*(n+2/(n-3)) + STk2n*(1-2/n) - STk2s*p*(n-2)*(n**2-2*n-1)/n/(n-1)/(n-3)
         vtk *= (n-1)/p/(n-2)**2
