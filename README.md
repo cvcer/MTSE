@@ -1,4 +1,8 @@
 # MTSE
 Multi-target linear shrinkage repository.
 
-Contains the code for the MTSE oracle and estimators, including Gram-Schmidt algorithm, in the case of known and unknown mean.
+In order to launch the experiments in the article:
+* Clone the repository
+* Unzip the data in ./code/data/YahooFinance/SP500
+* cd ./code
+* Run hub.py
